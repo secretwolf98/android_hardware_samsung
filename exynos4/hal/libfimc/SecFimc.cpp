@@ -159,9 +159,10 @@ int fimc_v4l2_req_buf(int fd, uint32_t *num_bufs, int cacheable_buffers)
     ALOGI("%d buffers allocated %d requested\n", reqbuf.count, 4);
 #endif
 
-    if (reqbuf.count > *num_bufs) {
-        error(fd, "Not enough buffer structs passed to get_buffers");
-        return -ENOMEM;
+    if ((secBuf->virt.p = (char *)mmap(0, buf.length,
+            PROT_READ | PROT_WRITE, MAP_SHARED, fd, buf.m.offset)) < (char *)0) {
+            ALOGE("%s::mmap failed", __func__);
+        return -1;
     }
     //*num_bufs = reqbuf.count;
 
