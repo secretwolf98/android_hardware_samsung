@@ -249,6 +249,12 @@ static int gralloc_device_open(const hw_module_t* module, const char* name, hw_d
     }
 #endif
 
+#ifdef ADVERTISE_GRALLOC1
+    if (!strcmp(name, GRALLOC_HARDWARE_MODULE_ID)) {
+        return gralloc1_adapter_device_open(module, name, device);
+    }
+#endif
+
     if (!strcmp(name, GRALLOC_HARDWARE_GPU0))
         status = alloc_device_open(module, name, device);
     else if (!strcmp(name, GRALLOC_HARDWARE_FB0))
@@ -726,7 +732,7 @@ struct private_module_t HAL_MODULE_INFO_SYM =
         unregisterBuffer: gralloc_unregister_buffer,
         lock: gralloc_lock,
         unlock: gralloc_unlock,
-//        getphys: gralloc_getphys,
+        getphys: gralloc_getphys,
         perform: gralloc_perform,
     },
     framebuffer: NULL,

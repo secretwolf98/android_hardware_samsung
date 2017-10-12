@@ -147,6 +147,10 @@ struct private_handle_t {
     uint64_t producer_usage;
     uint64_t consumer_usage;
 
+    uint64_t backing_store;
+    uint64_t producer_usage;
+    uint64_t consumer_usage;
+
 #ifdef __cplusplus
     static const int sNumInts = 21;
     static const int sNumFds = 1;
