@@ -27,6 +27,7 @@
  * limitations under the License.
  */
 
+//#define LOG_NDEBUG 0
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
@@ -101,10 +102,19 @@ extern int get_bpp(int format);
 
 #define EXYNOS4_ALIGN( value, base ) (((value) + ((base) - 1)) & ~((base) - 1))
 
+static uint64_t next_backing_store_id()
+{
+    static std::atomic<uint64_t> next_id(1);
+    return next_id++;
+}
+
 static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                                 buffer_handle_t* pHandle, int w, int h,
                                 int format, int bpp, int stride_raw, int stride)
 {
+    ALOGV("%s: size:%d usage:%d w:%d h:%d format:%d bpp:%d stride_raw:%d stride:%d",
+        __func__, size, usage, w,h, format, bpp, stride_raw, stride);
+
     ump_handle ump_mem_handle;
     void *cpu_ptr;
     ump_secure_id ump_id;
@@ -220,6 +230,7 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
         }
 
         *pHandle = hnd;
+        hnd->backing_store = next_backing_store_id();
         hnd->format = format;
         hnd->usage = usage;
         hnd->width = w;
@@ -235,7 +246,10 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
 
         buffer_offset += size;
 
-        ALOGD_IF(debug_level > 0, "%s hnd=%x paddr=%x yaddr=%x offset=%x", __func__, hnd, current_address, gReservedMemSize, buffer_offset);
+        void *mappedAddress = mmap(0, size,
+               PROT_READ|PROT_WRITE, MAP_SHARED, gMemfd, (hnd->paddr - hnd->offset));
+        hnd->base = intptr_t(mappedAddress) + hnd->offset;
+
         return 0;
     }
 
@@ -327,25 +341,27 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
 						psFRect->next = psRect;
 					}
 #endif
-
-					hnd->format = format;
-					hnd->usage = usage;
-					hnd->width = w;
-					hnd->height = h;
-					hnd->bpp = bpp;
-					hnd->stride = stride;
-					hnd->uoffset = ((EXYNOS4_ALIGN(hnd->width, 16) * EXYNOS4_ALIGN(hnd->height, 16)));
-					hnd->voffset = ((EXYNOS4_ALIGN((hnd->width / 2), 16) * EXYNOS4_ALIGN((hnd->height / 2), 16)));
-					hnd->paddr = ion_paddr;
-
-					ALOGD_IF(debug_level > 0, "%s hnd->format=0x%x hnd->uoffset=%d hnd->voffset=%d hnd->paddr=%x hnd->bpp=%d", __func__, hnd->format, hnd->uoffset, hnd->voffset, hnd->paddr, hnd->bpp);
-					return 0;
-				} else {
-					ALOGE("%s failed to allocate handle", __func__);
-				}
-			} else {
-				ALOGE("%s failed to retrieve valid secure id", __func__);
-			}
+                    hnd->backing_store = next_backing_store_id();
+                    hnd->format = format;
+                    hnd->usage = usage;
+                    hnd->width = w;
+                    hnd->height = h;
+                    hnd->bpp = bpp;
+                    hnd->stride = stride;
+                    if(hnd->format == HAL_PIXEL_FORMAT_YV12) {
+                        hnd->uoffset = ((EXYNOS4_ALIGN(hnd->width, 16) * hnd->height));
+                        hnd->voffset = ((EXYNOS4_ALIGN((hnd->width >> 1), 16) * (hnd->height >> 1)));
+                    } else {
+                        hnd->uoffset = ((EXYNOS4_ALIGN(hnd->width, 16) * EXYNOS4_ALIGN(hnd->height, 16)));
+                        hnd->voffset = ((EXYNOS4_ALIGN((hnd->width >> 1), 16) * EXYNOS4_ALIGN((hnd->height >> 1), 16)));
+                    }
+                    return 0;
+                } else {
+                    ALOGE("gralloc_alloc_buffer() failed to allocate handle");
+                }
+            } else {
+                ALOGE("gralloc_alloc_buffer() failed to retrieve valid secure id");
+            }
 
 			ump_mapped_pointer_release(ump_mem_handle);
 		} else {
@@ -364,6 +380,8 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev, size_t size, in
                                             buffer_handle_t* pHandle, int w, int h,
                                             int format, int bpp, int stride)
 {
+    ALOGV("%s: size:%d usage:%d w:%d h:%d format:%d bpp:%d ",
+        __func__, size, usage, w,h, format, bpp);
     private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
 
     ALOGD_IF(debug_level > 0, "%s size=0x%x usage=0x%x w=%d h=%d format=0x%x(%d) bpp=%d stride=%d", __func__, size, usage, w, h, format, format, bpp, stride);
@@ -430,8 +448,7 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev, size_t size, in
     hnd->width = w;
     hnd->height = h;
     hnd->bpp = bpp;
-    hnd->paddr = l_paddr;
-    hnd->stride = stride;
+    hnd->backing_store = next_backing_store_id();
 
     *pHandle = hnd;
 
@@ -442,7 +459,8 @@ static int gralloc_alloc_framebuffer(alloc_device_t* dev, size_t size, int usage
                                      buffer_handle_t* pHandle, int w, int h,
                                      int format, int bpp, int stride)
 {
-   
+    ALOGV("%s: size:%d usage:%d w:%d h:%d format:%d bpp:%d",
+        __func__, size, usage, w,h, format, bpp);
     private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
     pthread_mutex_lock(&m->lock);
     int err = gralloc_alloc_framebuffer_locked(dev, size, usage, pHandle, w, h, format, bpp, stride);
@@ -453,10 +471,9 @@ static int gralloc_alloc_framebuffer(alloc_device_t* dev, size_t size, int usage
 static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
                               int usage, buffer_handle_t* pHandle, int* pStride)
 {
-    int l_usage = usage;
-    int bpp = 0;
-
-    if (!pHandle || !pStride || w < 0 || h < 0)
+    ALOGV("%s: usage:%d w:%d h:%d format:%d ",
+        __func__, usage, w,h, format);
+    if (!pHandle || !pStride)
         return -EINVAL;
 
     ALOGD_IF(debug_level > 0, "%s w=%d h=%d format=0x%x usage=0x%x", __func__, w, h, format, usage);
