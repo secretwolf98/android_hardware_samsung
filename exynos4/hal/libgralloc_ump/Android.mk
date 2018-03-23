@@ -49,7 +49,7 @@ LOCAL_CFLAGS += -DUSE_PARTIAL_FLUSH
 LOCAL_STATIC_LIBRARIES        := libgralloc1-adapter-exynos4
 LOCAL_SHARED_LIBRARIES        += libsync
 
-LOCAL_STATIC_LIBRARIES        := libgralloc1-adapter
+LOCAL_STATIC_LIBRARIES        := libgralloc1-adapter-exynos4
 LOCAL_SHARED_LIBRARIES        += libsync
 
 ifeq ($(TARGET_SOC),exynos4210)
