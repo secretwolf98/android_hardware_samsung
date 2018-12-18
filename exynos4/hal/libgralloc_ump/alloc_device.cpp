@@ -65,6 +65,7 @@
 
 #include "videodev2.h"
 #include "s5p_fimc.h"
+#include "format.h"
 
 #ifdef SAMSUNG_EXYNOS4x12
 #define PFX_NODE_FIMC0   "/dev/video0"
